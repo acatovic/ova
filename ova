@@ -299,6 +299,7 @@ case "$cmd" in
         "Back-end started successfully (port $BACKEND_PORT)"
     fi
     echo "All services are up and running."
+    echo "Now just fire up your browser and go to http://localhost:$FRONTEND_PORT and enjoy!!!"
     ;;
   stop)
     stop_service "Backend" "$BACKEND_PID" "$BACKEND_GROUP"

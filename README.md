@@ -4,6 +4,10 @@
 
 A local voice assistant demo with a FastAPI backend and a simple HTML front-end. All the models (ASR / LLM / TTS) are open weight and running locally.
 
+## Demo
+
+<video src="ova-demo.mp4" controls width="40%"></video>
+
 ## Pre-requisites
 
 - Python >=3.13
@@ -11,12 +15,6 @@ A local voice assistant demo with a FastAPI backend and a simple HTML front-end.
 - Ollama installed and running (`ollama` CLI available)
 
 ## Install
-
-Prepare the Python environment:
-
-```
-uv sync
-```
 
 Fetch Python deps and HF/Ollama models:
 
