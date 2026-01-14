@@ -22,7 +22,7 @@ sequenceDiagram
   participant TTS as Local TTS Model
 
   Note over FE,BE: Audio input -> response audio (all models run locally)
-  FE->>BE: HTTP POST /voice (wave bytes)
+  FE->>BE: HTTP POST /chat (wave bytes)
   activate BE
 
   BE->>BE: Receive wave bytes
