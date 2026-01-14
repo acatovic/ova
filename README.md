@@ -6,7 +6,7 @@ A local voice assistant demo with a FastAPI backend and a simple HTML front-end.
 
 ## Demo
 
-<video src="ova-demo.mp4" controls width="40%"></video>
+[Watch the demo video](ova-demo.mp4)
 
 ## Pre-requisites
 
