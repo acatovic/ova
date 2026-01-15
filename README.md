@@ -10,6 +10,8 @@ Models used:
 * LLM: [Mistral ministral-3 8b 4-bit quantized](https://ollama.com/library/ministral-3:8b-instruct-2512-q4_K_M)
 * TTS: [Hexgrad Kokoro 82M](https://huggingface.co/hexgrad/Kokoro-82M)
 
+**Why "Outrageous"?** Because it was outrageously easy to create!
+
 How it works:
 
 ```mermaid
