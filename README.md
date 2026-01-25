@@ -26,8 +26,7 @@ On my system (RTX5070 12GiB VRAM), the whole round-trip-time is <2 seconds.
 
 ## Demo
 
-https://github.com/user-attachments/assets/73eafef7-82f6-4fb4-8676-f993861fb735
-
+https://github.com/user-attachments/assets/a296dbf7-9fa9-4904-bf22-d0cdc1e625a4
 
 ## Pre-requisites
 
