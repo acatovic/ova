@@ -15,7 +15,7 @@ FRONTEND_LOG="$OVA_DIR/frontend.log"
 BACKEND_PORT=5173
 FRONTEND_PORT=8000
 
-CHAT_MODEL="ministral-3:8b-instruct-2512-q4_K_M"
+CHAT_MODEL="ministral-3:3b-instruct-2512-q4_K_M"
 HF_MODELS=("hexgrad/Kokoro-82M" "nvidia/parakeet-tdt-0.6b-v3")
 
 usage() {

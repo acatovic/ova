@@ -7,54 +7,22 @@ A local voice assistant demo with a FastAPI backend and a simple HTML front-end.
 Models used:
 
 * ASR: [NVIDIA parakeet-tdt-0.6b-v3 600M](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3)
-* LLM: [Mistral ministral-3 8b 4-bit quantized](https://ollama.com/library/ministral-3:8b-instruct-2512-q4_K_M)
+* LLM: [Mistral ministral-3 3b 4-bit quantized](https://ollama.com/library/ministral-3:8b-instruct-2512-q4_K_M)
 * TTS: [Hexgrad Kokoro 82M](https://huggingface.co/hexgrad/Kokoro-82M)
 
 **Why "Outrageous"?** Because it was outrageously easy to create!
 
 How it works:
 
-```mermaid
-sequenceDiagram
-  autonumber
-  participant FE as Frontend (UI / Client)
-  participant BE as Backend (API)
-  participant ASR as Local ASR Model
-  participant LLM as Local LLM
-  participant TTS as Local TTS Model
+1. Frontend captures user's audio and sends a blob of bytes to the backend `/chat` endpoint
+2. Backend parses the bytes, extracts sample rate (SR) and channels, then:
+   1. Transcribes the audio to text using an automatic speech recognition (ASR) model
+   2. Sends the transcribed text to the LLM, i.e. "the brain"
+   3. Sends the LLM response to a text-to-speech (TTS) model
+   4. Performs normalization of TTS output, converts it to bytes, and sends the bytes back to frontend
+3. The frontend plays the response audio back to the user
 
-  Note over FE,BE: Audio input -> response audio (all models run locally)
-  FE->>BE: HTTP POST /chat (wave bytes)
-  activate BE
-
-  BE->>BE: Receive wave bytes
-  BE->>BE: Parse header (channels, sample rate, bit depth)
-  alt Resampling needed?
-    BE->>BE: Resample audio (optional)
-  end
-  BE->>BE: Convert audio samples -> tensor
-
-  BE->>ASR: Transcribe(tensor)
-  activate ASR
-  ASR-->>BE: transcript (text)
-  deactivate ASR
-
-  BE->>LLM: Generate(system prompt + transcript)
-  activate LLM
-  LLM-->>BE: response text
-  deactivate LLM
-
-  BE->>TTS: Synthesize(response text)
-  activate TTS
-  TTS-->>BE: audio output (samples)
-  deactivate TTS
-
-  BE->>BE: Encode samples -> wave bytes
-  BE-->>FE: HTTP 200 (wave bytes)
-  deactivate BE
-
-  FE->>FE: Play audio to user
-```
+On my system (RTX5070 12GiB VRAM), the whole round-trip-time is <2 seconds.
 
 ## Demo
 
@@ -66,6 +34,7 @@ https://github.com/user-attachments/assets/73eafef7-82f6-4fb4-8676-f993861fb735
 - Python >=3.13
 - `uv` installed and available in PATH
 - Ollama installed and running (`ollama` CLI available)
+- Verified on a system with RTX 5070 (12GiB VRAM); lower-end setups should be possible
 
 ## Install
 

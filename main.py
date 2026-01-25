@@ -17,7 +17,7 @@ SR = 24000
 # 'a' => US/American English
 tts_pipeline = KPipeline(lang_code='a', repo_id="hexgrad/Kokoro-82M")
 
-chat_model = "ministral-3:8b-instruct-2512-q4_K_M"
+chat_model = "ministral-3:3b-instruct-2512-q4_K_M"
 
 # Initialize ASR model
 asr_model = nemo_asr.models.ASRModel.from_pretrained(model_name="nvidia/parakeet-tdt-0.6b-v3")
@@ -43,6 +43,23 @@ def resample(arr: np.ndarray, src_sr: int, dst_sr: int) -> np.ndarray:
         return arr
     
     return soxr.resample(arr, src_sr, dst_sr, quality="HQ")
+
+
+def rms_normalize(arr: np.ndarray, target_rms=0.15, peak_limit=0.90, eps=1e-12) -> np.ndarray:
+    x = arr.astype(np.float32)
+
+    rms = np.sqrt(np.mean(x * x) + eps)
+    if rms < eps:
+        return x  # silence
+
+    x = x * (target_rms / rms)
+
+    # prevent clipping
+    peak = np.max(np.abs(x)) + eps
+    if peak > peak_limit:
+        x = x * (peak_limit / peak)
+
+    return x
 
 
 def transcribe(asr_model, wav_bytes: bytes) -> str:
@@ -120,11 +137,17 @@ def transcribe(asr_model, wav_bytes: bytes) -> str:
 
 
 def numpy_to_wav_bytes(arr: np.ndarray, sr: int) -> bytes:
-    if arr.dtype != np.int16:
-        arr_i16 = np.clip(arr, -1.0, 1.0)
-        arr_i16 = (arr_i16 * 32767).astype(np.int16)
+    if arr.dtype == np.int16:
+        arr = arr.astype(np.float32) / 32768.0
     else:
-        arr_i16 = arr
+        arr = arr.astype(np.float32)
+        arr = np.clip(arr, -1.0, 1.0)
+    
+    # RMS normalize
+    arr = rms_normalize(arr)
+
+    arr = np.clip(arr, -1.0, 1.0)
+    arr_i16 = (arr * 32767.0).astype(np.int16)
 
     if arr_i16.ndim == 1:
         arr_i16 = arr_i16[:, None]
