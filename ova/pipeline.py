@@ -1,6 +1,12 @@
 from enum import Enum
 import io
+import os
+import signal
 import wave
+
+# Patch missing SIGKILL on Windows so nemo-toolkit can import
+if os.name == "nt" and not hasattr(signal, "SIGKILL"):
+    signal.SIGKILL = signal.SIGTERM  # type: ignore[attr-defined]
 
 from kokoro import KPipeline
 import nemo.collections.asr as nemo_asr
