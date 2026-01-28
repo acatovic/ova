@@ -310,8 +310,14 @@ install_models() {
 
   # LLM models — only pull Ollama model when using Ollama (or --all)
   if [[ "$install_all" == "true" || "$OVA_LLM_BACKEND" == "ollama" ]]; then
-    ensure_cmd ollama
-    ensure_ollama_model "$CHAT_MODEL"
+    if command -v ollama >/dev/null 2>&1; then
+      ensure_ollama_model "$CHAT_MODEL"
+    elif [[ "$install_all" == "true" ]]; then
+      echo "WARNING: ollama not found in PATH — skipping Ollama model download."
+      echo "  Install Ollama (https://ollama.com) and run:  ollama pull $CHAT_MODEL"
+    else
+      die "missing 'ollama' in PATH (needed for OVA_LLM_BACKEND=ollama)"
+    fi
   fi
 }
 

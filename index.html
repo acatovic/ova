@@ -72,8 +72,23 @@
         transition: border-color 150ms;
       }
       .settings-bar select:focus,
-      .settings-bar input[type="text"]:focus {
+      .settings-bar input[type="text"]:focus,
+      .settings-bar textarea:focus {
         border-color: var(--accent);
+      }
+
+      .settings-bar textarea {
+        padding: 7px 10px;
+        border: 1px solid rgba(0,0,0,0.10);
+        border-radius: 10px;
+        background: rgba(255,255,255,0.55);
+        font-size: 13px;
+        font-family: inherit;
+        color: var(--text);
+        outline: none;
+        transition: border-color 150ms;
+        resize: vertical;
+        min-height: 42px;
       }
 
       /* ---- Main stage ---- */
@@ -298,6 +313,11 @@
           <input type="text" id="koboldUrl" placeholder="http://localhost:5001" />
         </div>
       </div>
+
+      <div class="field" style="flex: 1 1 100%; min-width: 100%;">
+        <label for="systemPrompt">System Prompt</label>
+        <textarea id="systemPrompt" rows="3" placeholder="e.g. You are a helpful assistant. Keep responses concise."></textarea>
+      </div>
     </div>
 
     <!-- Main talk button -->
@@ -345,6 +365,7 @@
       const voiceFieldEl = document.getElementById("voiceField");
       const llmBackendEl = document.getElementById("llmBackend");
       const llmModelEl = document.getElementById("llmModel");
+      const systemPromptEl = document.getElementById("systemPrompt");
       const koboldFieldsEl = document.getElementById("koboldFields");
       const koboldUrlEl = document.getElementById("koboldUrl");
 
@@ -370,6 +391,7 @@
           llmBackendEl.value = config.llm_backend;
           llmModelEl.value = config.llm_model || "";
           koboldUrlEl.value = config.koboldcpp_url || "http://localhost:5001";
+          systemPromptEl.value = config.system_prompt || "";
 
           updateVoiceDropdown(config.tts_engine, config.pocket_tts_voice);
           updateKoboldVisibility();
@@ -457,6 +479,11 @@
       koboldUrlEl.addEventListener("change", async () => {
         const val = koboldUrlEl.value.trim();
         if (val) await pushConfig({ koboldcpp_url: val });
+      });
+
+      systemPromptEl.addEventListener("change", async () => {
+        const val = systemPromptEl.value.trim();
+        await pushConfig({ system_prompt: val });
       });
 
       // ---- State management ----

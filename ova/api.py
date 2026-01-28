@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from .pipeline import OVAPipeline, POCKET_TTS_VOICES
+from .utils import logger
 
 
 OVA_PROFILE = os.getenv("OVA_PROFILE", "default")
@@ -42,7 +43,14 @@ pipeline = OVAPipeline(
 async def chat_request_handler(request: Request):
     audio_in = await request.body()
 
-    transcribed_text = pipeline.transcribe(audio_in)
+    if not audio_in or len(audio_in) < 44:
+        return Response(content=bytes(), media_type="audio/wav")
+
+    try:
+        transcribed_text = pipeline.transcribe(audio_in)
+    except Exception as e:
+        logger.error(f"Transcription failed: {e}")
+        return Response(content=bytes(), media_type="audio/wav")
 
     if not transcribed_text:
         return Response(content=bytes(), media_type="audio/wav")
@@ -87,6 +95,7 @@ class ConfigUpdate(BaseModel):
     llm_backend: str | None = None
     llm_model: str | None = None
     koboldcpp_url: str | None = None
+    system_prompt: str | None = None
 
 
 @app.post("/config")
@@ -114,6 +123,9 @@ async def update_config(update: ConfigUpdate):
             )
         except ValueError as e:
             errors.append(str(e))
+
+    if update.system_prompt is not None:
+        pipeline.set_system_prompt(update.system_prompt)
 
     config = pipeline.get_config()
     if errors:
