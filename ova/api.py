@@ -150,5 +150,4 @@ async def get_voices():
     return JSONResponse(content={
         "pocket_tts": POCKET_TTS_VOICES,
         "kokoro": ["af_heart"],
-        "qwen3_voice_clone": ["profile-defined"],
     })

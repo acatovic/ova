@@ -27,7 +27,6 @@ CHAT_MODEL="ministral-3:3b-instruct-2512-q4_K_M"
 # HF models mapped by component
 HF_MODEL_ASR="nvidia/parakeet-tdt-0.6b-v3"
 HF_MODEL_KOKORO="hexgrad/Kokoro-82M"
-HF_MODEL_QWEN="Qwen/Qwen3-TTS-12Hz-1.7B-Base"
 
 usage() {
   cat <<'EOF'
@@ -35,7 +34,7 @@ Usage: ova [OPTIONS] <command>
 
 Environment variables:
   OVA_PROFILE=<profile>              Set the profile to use (default: default)
-  OVA_TTS_ENGINE=<engine>            TTS engine: kokoro, pocket_tts, qwen3_voice_clone (default: kokoro)
+  OVA_TTS_ENGINE=<engine>            TTS engine: kokoro, pocket_tts (default: kokoro)
   OVA_LLM_BACKEND=<backend>         LLM backend: ollama, koboldcpp (default: ollama)
   OVA_LLM_MODEL=<model>             LLM model name (default: auto per backend)
   OVA_KOBOLDCPP_URL=<url>           Koboldcpp API URL (default: http://localhost:5001)
@@ -300,9 +299,6 @@ install_models() {
   # TTS models — only download what's needed (or everything with --all)
   if [[ "$install_all" == "true" || "$OVA_TTS_ENGINE" == "kokoro" ]]; then
     ensure_hf_model "$HF_MODEL_KOKORO"
-  fi
-  if [[ "$install_all" == "true" || "$OVA_TTS_ENGINE" == "qwen3_voice_clone" ]]; then
-    ensure_hf_model "$HF_MODEL_QWEN"
   fi
   if [[ "$install_all" == "true" || "$OVA_TTS_ENGINE" == "pocket_tts" ]]; then
     ensure_pocket_tts

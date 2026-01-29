@@ -15,7 +15,6 @@ dependencies = [
     "ollama>=0.6.1",
     "uvicorn>=0.40.0",
     "pip>=25.2",
-    "qwen-tts>=0.0.5",
     "cuda-python>=12.3",
     "pocket-tts>=0.2.0",
     "requests>=2.32.0",

@@ -14,7 +14,6 @@ import nemo.collections.asr as nemo_asr
 import numpy as np
 from ollama import chat as ollama_chat
 from pocket_tts import TTSModel as PocketTTSModel
-from qwen_tts import Qwen3TTSModel
 import requests
 import torch
 
@@ -25,7 +24,6 @@ from .utils import get_device, logger
 DEFAULT_SR = 24000  # default sample rate
 DEFAULT_TTS_MODEL = "hexgrad/Kokoro-82M"
 DEFAULT_TTS_VOICE = "af_heart"
-VOICE_CLONE_TTS_MODEL = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
 DEFAULT_CHAT_MODEL = "ministral-3:3b-instruct-2512-q4_K_M"
 DEFAULT_ASR_MODEL = "nvidia/parakeet-tdt-0.6b-v3"
 
@@ -43,7 +41,6 @@ class OVAProfile(str, Enum):
 class TTSEngine(str, Enum):
     KOKORO = "kokoro"
     POCKET_TTS = "pocket_tts"
-    QWEN3_VOICE_CLONE = "qwen3_voice_clone"
 
 
 class LLMBackend(str, Enum):
@@ -100,8 +97,6 @@ class OVAPipeline:
         self._kokoro_model = None
         self._pocket_tts_model = None
         self._pocket_tts_voice_states = {}
-        self._qwen_model = None
-        self._voice_clone_prompt_items = None
 
         self._init_tts_engine(profile_dir)
 
@@ -118,8 +113,6 @@ class OVAPipeline:
             self._ensure_kokoro()
         elif self._tts_engine == TTSEngine.POCKET_TTS:
             self._ensure_pocket_tts()
-        elif self._tts_engine == TTSEngine.QWEN3_VOICE_CLONE:
-            self._ensure_qwen(profile_dir)
 
     def _ensure_kokoro(self):
         if self._kokoro_model is None:
@@ -143,30 +136,6 @@ class OVAPipeline:
             logger.info(f"Loading Pocket-TTS voice: {voice}")
             self._pocket_tts_voice_states[voice] = self._pocket_tts_model.get_state_for_audio_prompt(voice)
         return self._pocket_tts_voice_states[voice]
-
-    def _ensure_qwen(self, profile_dir: str | None = None):
-        if self._qwen_model is None:
-            logger.info("Loading Qwen3-TTS voice clone model...")
-            self._qwen_model = Qwen3TTSModel.from_pretrained(
-                VOICE_CLONE_TTS_MODEL,
-                device_map=self.device,
-                dtype=torch.bfloat16,
-            )
-            logger.info("Qwen3-TTS model loaded.")
-
-        if self._voice_clone_prompt_items is None and profile_dir is not None:
-            try:
-                with open(f"{profile_dir}/ref_text.txt", "r", encoding="utf-8") as f:
-                    ref_text = f.read().strip()
-
-                self._voice_clone_prompt_items = self._qwen_model.create_voice_clone_prompt(
-                    ref_audio=f"{profile_dir}/ref_audio.wav",
-                    ref_text=ref_text,
-                    x_vector_only_mode=False,
-                )
-            except FileNotFoundError:
-                logger.warning(f"Voice clone reference files not found in {profile_dir}. "
-                               "Qwen3 voice clone will not work without ref_audio.wav and ref_text.txt.")
 
     @property
     def tts_engine(self) -> TTSEngine:
@@ -247,8 +216,6 @@ class OVAPipeline:
             return self._tts_kokoro(text)
         elif self._tts_engine == TTSEngine.POCKET_TTS:
             return self._tts_pocket(text)
-        elif self._tts_engine == TTSEngine.QWEN3_VOICE_CLONE:
-            return self._tts_qwen_voice_clone(text)
         else:
             raise ValueError(f"No TTS handler for engine: {self._tts_engine}")
 
@@ -280,33 +247,6 @@ class OVAPipeline:
 
         combined = np.concatenate(chunks) if chunks else np.array([], dtype=np.float32)
         return numpy_to_wav_bytes(combined, sr=sr)
-
-    def _tts_qwen_voice_clone(self, text: str) -> bytes:
-        profile_dir = f"profiles/{self.profile.value}"
-        self._ensure_qwen(profile_dir)
-
-        if self._voice_clone_prompt_items is None:
-            raise RuntimeError("Voice clone prompt not initialized. Ensure ref_audio.wav and ref_text.txt "
-                               f"exist in profiles/{self.profile.value}/")
-
-        sentences = self._split_into_sentences(text)
-        chunks = []
-        sr = None
-        for sentence in sentences:
-            wavs, sentence_sr = self._qwen_model.generate_voice_clone(
-                text=sentence,
-                language="English",
-                voice_clone_prompt=self._voice_clone_prompt_items,
-            )
-            sr = sentence_sr
-            if wavs[0].size > 0:
-                chunks.append(wavs[0])
-
-        if not chunks or sr is None:
-            return numpy_to_wav_bytes(np.array([], dtype=np.float32), DEFAULT_SR)
-
-        combined = np.concatenate(chunks)
-        return numpy_to_wav_bytes(combined, sr)
 
     # ------------------------------------------------------------------
     # ASR

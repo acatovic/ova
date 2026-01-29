@@ -11,7 +11,6 @@ Models used:
 * LLM: [Mistral ministral-3 3b 4-bit quantized](https://ollama.com/library/ministral-3:8b-instruct-2512-q4_K_M) (via Ollama), or any model via Koboldcpp
 * TTS (Fast): [Hexgrad Kokoro 82M](https://huggingface.co/hexgrad/Kokoro-82M)
 * TTS (Pocket-TTS): [Kyutai Pocket-TTS 100M](https://github.com/kyutai-labs/pocket-tts) — 8 built-in voices, CPU-friendly
-* TTS (Voice Cloning): [Qwen3-TTS](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base)
 
 **Why "Outrageous"?** Because it was outrageously easy to create!
 
@@ -27,7 +26,7 @@ How it works:
 
 On my system (RTX5070 12GiB VRAM), the whole round-trip-time using Kokoro is ~1 second.
 
-When using "profiles" (or voice cloning), there is an additional pre-step where a 3-5 second `wav` clip with a corresponding transcription and a prompt, is used for TTS. This leverages Qwen3-TTS and doesn't require any finetuning. Note however that responses will be much slower.
+When using "profiles", a custom system prompt is loaded to shape the assistant's personality.
 
 ## Demos
 
@@ -106,7 +105,7 @@ All settings can be configured via environment variables at startup, and also ch
 | Variable | Default | Description |
 |---|---|---|
 | `OVA_PROFILE` | `default` | Voice profile (`default` or `dua`) |
-| `OVA_TTS_ENGINE` | `kokoro` | TTS engine: `kokoro`, `pocket_tts`, or `qwen3_voice_clone` |
+| `OVA_TTS_ENGINE` | `kokoro` | TTS engine: `kokoro` or `pocket_tts` |
 | `OVA_LLM_BACKEND` | `ollama` | LLM backend: `ollama` or `koboldcpp` |
 | `OVA_LLM_MODEL` | auto | LLM model name (e.g. `mistral:latest`) |
 | `OVA_KOBOLDCPP_URL` | `http://localhost:5001` | Koboldcpp API URL |
@@ -150,7 +149,7 @@ OVA_LLM_BACKEND=koboldcpp OVA_KOBOLDCPP_URL=http://192.168.1.100:5001 ./ova.sh s
 
 Once running, the web UI at http://localhost:8000 includes a settings bar where you can change all of the above live without restarting:
 
-- **TTS Engine** dropdown (Kokoro / Pocket-TTS / Qwen3 Voice Clone)
+- **TTS Engine** dropdown (Kokoro / Pocket-TTS)
 - **Voice** dropdown (populated based on selected TTS engine)
 - **LLM Backend** dropdown (Ollama / Koboldcpp)
 - **LLM Model** text field
@@ -179,4 +178,4 @@ tail -f .ova/backend.log
 
 ---
 
-**Disclaimer & Ethical Considerations:** This project is a proof-of-concept demonstration and is provided **as is** without any warranties or guarantees. It is intended for educational and experimental purposes only. The voice cloning is also purely for educational purposes - for real-life/commercial use, one should always seek the relevant permissions. This demo also highlights the ethical and security aspects - the ease with which one can clone a voice with no finetuning, using only a 3-5 second audio clip - which is both eerie, and potentially dangerous in the wrong hands. All this can be accomplished on a commodity PC that most people can afford.
+**Disclaimer & Ethical Considerations:** This project is a proof-of-concept demonstration and is provided **as is** without any warranties or guarantees. It is intended for educational and experimental purposes only. All this can be accomplished on a commodity PC that most people can afford.
