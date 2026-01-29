@@ -1,6 +1,7 @@
 from enum import Enum
 import io
 import os
+import re
 import signal
 import wave
 
@@ -221,6 +222,22 @@ class OVAPipeline:
         logger.info(f"System prompt updated ({len(prompt)} chars). Conversation context reset.")
 
     # ------------------------------------------------------------------
+    # Text chunking for TTS
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _split_into_sentences(text: str) -> list[str]:
+        """Split text into sentences for TTS processing.
+
+        TTS engines can fail on long input. This splits on sentence
+        boundaries so each chunk is a manageable size.
+        """
+        # Split on sentence-ending punctuation followed by whitespace
+        parts = re.split(r'(?<=[.!?])\s+', text.strip())
+        # Filter out empty strings
+        return [p.strip() for p in parts if p.strip()]
+
+    # ------------------------------------------------------------------
     # TTS methods
     # ------------------------------------------------------------------
 
@@ -251,10 +268,18 @@ class OVAPipeline:
     def _tts_pocket(self, text: str) -> bytes:
         self._ensure_pocket_tts()
         voice_state = self._get_pocket_tts_voice_state(self._pocket_tts_voice)
-        audio_tensor = self._pocket_tts_model.generate_audio(voice_state, text)
-        arr = audio_tensor.numpy()
         sr = self._pocket_tts_model.sample_rate
-        return numpy_to_wav_bytes(arr, sr=sr)
+
+        sentences = self._split_into_sentences(text)
+        chunks = []
+        for sentence in sentences:
+            audio_tensor = self._pocket_tts_model.generate_audio(voice_state, sentence)
+            arr = audio_tensor.numpy()
+            if arr.size > 0:
+                chunks.append(arr)
+
+        combined = np.concatenate(chunks) if chunks else np.array([], dtype=np.float32)
+        return numpy_to_wav_bytes(combined, sr=sr)
 
     def _tts_qwen_voice_clone(self, text: str) -> bytes:
         profile_dir = f"profiles/{self.profile.value}"
@@ -264,12 +289,24 @@ class OVAPipeline:
             raise RuntimeError("Voice clone prompt not initialized. Ensure ref_audio.wav and ref_text.txt "
                                f"exist in profiles/{self.profile.value}/")
 
-        wavs, sr = self._qwen_model.generate_voice_clone(
-            text=text,
-            language="English",
-            voice_clone_prompt=self._voice_clone_prompt_items,
-        )
-        return numpy_to_wav_bytes(wavs[0], sr)
+        sentences = self._split_into_sentences(text)
+        chunks = []
+        sr = None
+        for sentence in sentences:
+            wavs, sentence_sr = self._qwen_model.generate_voice_clone(
+                text=sentence,
+                language="English",
+                voice_clone_prompt=self._voice_clone_prompt_items,
+            )
+            sr = sentence_sr
+            if wavs[0].size > 0:
+                chunks.append(wavs[0])
+
+        if not chunks or sr is None:
+            return numpy_to_wav_bytes(np.array([], dtype=np.float32), DEFAULT_SR)
+
+        combined = np.concatenate(chunks)
+        return numpy_to_wav_bytes(combined, sr)
 
     # ------------------------------------------------------------------
     # ASR

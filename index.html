@@ -625,7 +625,7 @@
             return;
           }
 
-          const chatResponse = res.headers.get("X-Chat-Response") || "";
+          const chatResponse = decodeURIComponent(res.headers.get("X-Chat-Response") || "");
           const blob = await res.blob();
           textInputEl.value = "";
           playAudioBlob(blob, chatResponse);

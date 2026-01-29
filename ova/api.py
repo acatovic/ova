@@ -1,4 +1,5 @@
 import os
+from urllib.parse import quote
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
@@ -55,8 +56,12 @@ async def chat_request_handler(request: Request):
     if not transcribed_text:
         return Response(content=bytes(), media_type="audio/wav")
 
-    chat_response = pipeline.chat(transcribed_text)
-    audio_out = pipeline.tts(chat_response)
+    try:
+        chat_response = pipeline.chat(transcribed_text)
+        audio_out = pipeline.tts(chat_response)
+    except Exception as e:
+        logger.error(f"Chat/TTS failed: {e}")
+        return Response(content=bytes(), media_type="audio/wav")
 
     return Response(content=audio_out, media_type="audio/wav")
 
@@ -72,13 +77,17 @@ async def text_chat_handler(request: TextChatRequest):
     if not request.text.strip():
         return Response(content=bytes(), media_type="audio/wav")
 
-    chat_response = pipeline.chat(request.text.strip())
-    audio_out = pipeline.tts(chat_response)
+    try:
+        chat_response = pipeline.chat(request.text.strip())
+        audio_out = pipeline.tts(chat_response)
+    except Exception as e:
+        logger.error(f"Chat/TTS failed: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
     return Response(
         content=audio_out,
         media_type="audio/wav",
-        headers={"X-Chat-Response": chat_response},
+        headers={"X-Chat-Response": quote(chat_response, safe="")},
     )
 
 
