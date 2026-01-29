@@ -365,7 +365,7 @@ case "$cmd" in
       fi
     else
       start_detached "$FRONTEND_LOG" "$FRONTEND_PID" "$FRONTEND_GROUP" \
-        uv run python3 -m http.server
+        uv run python3 -m http.server --directory "$ROOT_DIR"
       wait_for_port "Web server" "$FRONTEND_PORT" "$FRONTEND_PID" "$FRONTEND_LOG" 5 \
         "Front-end started successfully (port $FRONTEND_PORT)"
     fi
