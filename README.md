@@ -247,13 +247,40 @@ Once running, the web UI at http://localhost:8000 includes a settings bar where 
 | `/config` | GET | Get current configuration |
 | `/config` | POST | Update configuration (TTS engine, voice, LLM backend, etc.) |
 | `/voices` | GET | List available voices per TTS engine |
+| `/health` | GET | GPU status, loaded models, and current config |
 
-## Logs
+## Troubleshooting
 
-Logs and PIDs are stored under `.ova/`. To follow logs in another terminal:
+Check service status:
 
 ```bash
-tail -f .ova/backend.log
+./ova.sh status
+```
+
+Tail logs in real time:
+
+```bash
+./ova.sh logs
+```
+
+Check the backend health endpoint (while running):
+
+```bash
+curl -s http://localhost:5173/health | python3 -m json.tool
+```
+
+Clean reinstall if things break:
+
+```bash
+./ova.sh reinstall          # Linux / macOS
+reinstall.bat               # Windows
+```
+
+Remove everything:
+
+```bash
+./ova.sh uninstall          # Linux / macOS
+uninstall.bat               # Windows
 ```
 
 **Enjoy!**

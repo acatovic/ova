@@ -1,4 +1,5 @@
 import os
+import torch
 from urllib.parse import quote
 
 from fastapi import FastAPI, Request
@@ -159,4 +160,24 @@ async def get_voices():
     return JSONResponse(content={
         "kokoro": KOKORO_VOICES,
         "pocket_tts": POCKET_TTS_VOICES,
+    })
+
+
+# ---------- Health endpoint ----------
+
+@app.get("/health")
+async def health():
+    gpu_available = torch.cuda.is_available()
+    return JSONResponse(content={
+        "status": "ok",
+        "gpu": {
+            "available": gpu_available,
+            "device_name": torch.cuda.get_device_name(0) if gpu_available else None,
+        },
+        "models_loaded": {
+            "asr": pipeline.asr_model is not None,
+            "tts_kokoro": pipeline._kokoro_model is not None,
+            "tts_pocket": pipeline._pocket_tts_model is not None,
+        },
+        "config": pipeline.get_config(),
     })

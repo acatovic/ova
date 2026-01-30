@@ -46,6 +46,10 @@ Commands:
   install --all  Install deps + download ALL models (every engine)
   start          Start backend + frontend server (non-blocking)
   stop           Stop running services
+  status         Show whether services are running
+  logs           Tail backend + frontend logs (Ctrl-C to quit)
+  uninstall      Stop services and remove .venv + .ova
+  reinstall      Uninstall then install again from scratch
   help           Show this message
 
 Examples:
@@ -427,6 +431,85 @@ case "$cmd" in
   stop)
     stop_service "Backend" "$BACKEND_PID" "$BACKEND_GROUP"
     stop_service "Web server" "$FRONTEND_PID" "$FRONTEND_GROUP"
+    ;;
+  status)
+    echo "OVA Status"
+    echo "=========="
+    if is_running "$BACKEND_PID"; then
+      if port_open "$BACKEND_PORT"; then
+        echo "Backend:    running (port $BACKEND_PORT)"
+      else
+        echo "Backend:    running (port $BACKEND_PORT NOT responding)"
+      fi
+    else
+      echo "Backend:    stopped"
+    fi
+    if is_running "$FRONTEND_PID"; then
+      if port_open "$FRONTEND_PORT"; then
+        echo "Frontend:   running (port $FRONTEND_PORT)"
+      else
+        echo "Frontend:   running (port $FRONTEND_PORT NOT responding)"
+      fi
+    else
+      echo "Frontend:   stopped"
+    fi
+    echo ""
+    echo "Config"
+    echo "------"
+    echo "  Profile:          $OVA_PROFILE"
+    echo "  TTS Engine:       $OVA_TTS_ENGINE"
+    echo "  LLM Backend:      $OVA_LLM_BACKEND"
+    [[ -n "$OVA_LLM_MODEL" ]] && echo "  LLM Model:        $OVA_LLM_MODEL"
+    [[ "$OVA_LLM_BACKEND" == "koboldcpp" ]] && echo "  Koboldcpp URL:    $OVA_KOBOLDCPP_URL"
+    echo ""
+    echo "Paths"
+    echo "-----"
+    echo "  Project:   $ROOT_DIR"
+    echo "  Logs:      $OVA_DIR/"
+    [[ -d "$ROOT_DIR/.venv" ]] && echo "  Venv:      $ROOT_DIR/.venv" || echo "  Venv:      (not installed)"
+    ;;
+  logs)
+    if [[ ! -d "$OVA_DIR" ]]; then
+      die "no logs found — has the service been started? (run ./ova.sh start)"
+    fi
+    echo "Tailing backend + frontend logs (Ctrl-C to quit)..."
+    echo ""
+    tail -f "$BACKEND_LOG" "$FRONTEND_LOG" 2>/dev/null || \
+      die "log files not found in $OVA_DIR"
+    ;;
+  uninstall)
+    echo "Stopping services..."
+    stop_service "Backend" "$BACKEND_PID" "$BACKEND_GROUP"
+    stop_service "Web server" "$FRONTEND_PID" "$FRONTEND_GROUP"
+
+    if [[ -d "$ROOT_DIR/.venv" ]]; then
+      echo "Removing virtual environment..."
+      rm -rf "$ROOT_DIR/.venv"
+      echo "Virtual environment removed."
+    else
+      echo "No virtual environment found."
+    fi
+
+    if [[ -d "$OVA_DIR" ]]; then
+      echo "Removing runtime data (.ova)..."
+      rm -rf "$OVA_DIR"
+      echo "Runtime data removed."
+    else
+      echo "No runtime data found."
+    fi
+
+    echo ""
+    echo "Uninstall complete."
+    echo "Note: HuggingFace model cache and Ollama models are stored"
+    echo "globally and were not removed. To free disk space, run:"
+    echo "  uvx hf cache delete"
+    echo "  ollama rm $CHAT_MODEL"
+    ;;
+  reinstall)
+    echo "Reinstalling OVA..."
+    "$0" uninstall
+    echo ""
+    "$0" install "$subcmd"
     ;;
   help|-h|--help)
     usage
