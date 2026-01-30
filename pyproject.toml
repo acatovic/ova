@@ -3,7 +3,7 @@ name = "ova"
 version = "0.2.0"
 description = "Outrageous Voice Assistant - Fully local end-to-end voice assistant pipeline using open weight models."
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.13,<3.14"
 dependencies = [
     "numpy>=2.3.5",
     "soxr>=1.0.0",
