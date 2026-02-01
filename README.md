@@ -26,14 +26,14 @@ How it works:
 
 On my system (RTX5070 12GiB VRAM), the whole round-trip-time using Kokoro is ~1 second.
 
-When using "profiles" (or voice cloning), there is an additional pre-step where a 3-5 second `wav` clip with a corresponding transcription and a prompt, is used for TTS. This leverages Qwen3-TTS and doesn't require any finetuning. Note however that responses will be much slower.
+When using "profiles" (or voice cloning), there is an additional pre-step where a 3-5 second `wav` clip with a corresponding transcription and a prompt, is used for TTS. This leverages Qwen3-TTS and doesn't require any finetuning. Note however that responses will be slightly slower. The reason I included Kokoro as a default / non-voice cloning TTS is (1) it's very fast, and (2) I really like the quality of the default voice.
 
 ## Demos
 
-## Voice assistant with cloned voice TTS
+## Voice assistant with Dua Lipa's cloned voice
 https://github.com/user-attachments/assets/9b546ab1-8c71-44f2-85d8-433b3a3d267f
 
-## Fast voice assistant with default TTS
+## Voice assistant with the default voice
 https://github.com/user-attachments/assets/a296dbf7-9fa9-4904-bf22-d0cdc1e625a4
 
 ## Pre-requisites
@@ -81,6 +81,16 @@ Stop all services:
 ```bash
 ./ova.sh stop
 ```
+
+## Adding new voices (clones / profiles)
+
+In order to add a new voice, no code changes are required. You simply need to do the following:
+
+1. Create a new directory `profiles/<voice>/`
+2. Add a 3-5 second voice clip `ref_audio.wav`, a direct transcription of that clip `ref_text.txt`, and any instructions in the `prompt.txt` - all under the sub-directory created in the previous step.
+3. To start the service with the new voice, simply run `OVA_PROFILE=<voice> ./ova.sh start`
+
+And that's it!
 
 **Enjoy!**
 

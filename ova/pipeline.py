@@ -1,5 +1,6 @@
 from enum import Enum
 import io
+from pathlib import Path
 import wave
 
 from kokoro import KPipeline
@@ -21,30 +22,26 @@ DEFAULT_CHAT_MODEL = "ministral-3:3b-instruct-2512-q4_K_M"
 DEFAULT_ASR_MODEL = "nvidia/parakeet-tdt-0.6b-v3"
 
 
-class OVAProfile(str, Enum):
-    DEFAULT = "default"
-    DUA = "dua"
-
-
 class OVAPipeline:
-    def __init__(self, profile: OVAProfile | str):
-        try:
-            self.profile = OVAProfile(profile)
-        except ValueError:
-            logger.warning(f"Unknown OVA profile '{profile}', defaulting to DEFAULT")
-            self.profile = OVAProfile.DEFAULT
-        
-        self.tts = {
-            OVAProfile.DEFAULT: self._tts,
-            OVAProfile.DUA: self._tts_with_voice_clone,
-        }[self.profile]
+    def __init__(self, profile: str = "default"):
+        required_files = ["prompt.txt", "ref_audio.wav", "ref_text.txt"]
+        profile_dir = Path(f"profiles/{profile}/")
+
+        if profile_dir.is_dir() and all((profile_dir / f).is_file() for f in required_files):
+            self.profile = profile
+            self.tts = self._tts_with_voice_clone
+        else:
+            self.profile = "default"
+            self.tts = self._tts
+            if profile != "default":
+                logger.warning((
+                    f"Unknown OVA profile '{profile}' or missing the following files in 'profiles/{profile}/' directory: "
+                    f"{', '.join(required_files)}. Using 'default' profile."
+                ))
 
         self.device = get_device()
 
-        # prep for loading assistant profile / prompt
-        profile_dir = f"profiles/{self.profile.value}"
-
-        with open(f"{profile_dir}/prompt.txt", "r", encoding="utf-8") as f:
+        with open(profile_dir / "prompt.txt", "r", encoding="utf-8") as f:
             self.system_prompt = f.read().strip()
 
         self.context = [{"role": "system", "content": self.system_prompt}]
@@ -58,11 +55,11 @@ class OVAPipeline:
                 attn_implementation="flash_attention_2",
             )
 
-            with open(f"{profile_dir}/ref_text.txt", "r", encoding="utf-8") as f:
+            with open(profile_dir / "ref_text.txt", "r", encoding="utf-8") as f:
                 ref_text = f.read().strip()
 
             self.voice_clone_prompt_items = self.tts_model.create_voice_clone_prompt(
-                ref_audio=f"{profile_dir}/ref_audio.wav",
+                ref_audio=str(profile_dir / "ref_audio.wav"),
                 ref_text=ref_text,
                 x_vector_only_mode=False,
             )
