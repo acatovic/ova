@@ -31,9 +31,9 @@ When using "profiles" (or voice cloning), there is an additional pre-step where 
 
 ## TO-DO
 
-- [] Add Voice Activity Detection (VAD) client-side (e.g. see  https://docs.vad.ricky0123.com/)
-- [] Remove the need for prepared transcript for voice cloning - use ASR as part of a "warmup"
-- [] Add orchestration to detect more complex tasks (e.g. requiring GPT/Claude) or whether tool calls (web search, file search, other cli/API calls are needed)
+- [ ] Add Voice Activity Detection (VAD) client-side (e.g. see  https://docs.vad.ricky0123.com/)
+- [ ] Remove the need for prepared transcript for voice cloning - use ASR as part of a "warmup"
+- [ ] Add orchestration to detect more complex tasks (e.g. requiring GPT/Claude) or whether tool calls (web search, file search, other cli/API calls are needed)
 
 
 ## Demos
