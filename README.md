@@ -28,6 +28,14 @@ On my system (RTX5070 12GiB VRAM), the whole round-trip-time using Kokoro is ~1 
 
 When using "profiles" (or voice cloning), there is an additional pre-step where a 3-5 second `wav` clip with a corresponding transcription and a prompt, is used for TTS. This leverages Qwen3-TTS and doesn't require any finetuning. Note however that responses will be slightly slower. The reason I included Kokoro as a default / non-voice cloning TTS is (1) it's very fast, and (2) I really like the quality of the default voice.
 
+
+## TO-DO
+
+- [] Add Voice Activity Detection (VAD) client-side (e.g. see  https://docs.vad.ricky0123.com/)
+- [] Remove the need for prepared transcript for voice cloning - use ASR as part of a "warmup"
+- [] Add orchestration to detect more complex tasks (e.g. requiring GPT/Claude) or whether tool calls (web search, file search, other cli/API calls are needed)
+
+
 ## Demos
 
 ## Voice assistant with Dua Lipa's cloned voice
