@@ -1,11 +1,14 @@
 import os
 
 from fastapi import FastAPI, Request
-from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 
 from .pipeline import OVAPipeline
 
+with open(".config") as f:
+    backend = f.read().strip().split("=")[1]
+    print(f"### BACKEND: {backend}")
 
 OVA_PROFILE = os.getenv("OVA_PROFILE", "default")
 
@@ -21,6 +24,7 @@ app.add_middleware(
 )
 
 pipeline = OVAPipeline(profile=OVA_PROFILE)
+
 
 @app.post("/chat", response_class=Response)
 async def chat_request_handler(request: Request):

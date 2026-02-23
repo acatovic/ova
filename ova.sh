@@ -304,6 +304,9 @@ case "$cmd" in
 
     [[ -n "$install_backend" ]] || die "install requires one of --cuda or --mlx"
 
+    printf 'backend=%s\n' "$install_backend" > "$ROOT_DIR/.config"
+    echo "Wrote backend config: $ROOT_DIR/.config"
+
     uv venv
     if [[ "$install_backend" == "cuda" ]]; then
       uv pip install -e ".[cuda]"
