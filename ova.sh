@@ -17,12 +17,13 @@ FRONTEND_PORT=8000
 
 OVA_PROFILE="${OVA_PROFILE:-default}"
 
-CHAT_MODEL="ministral-3:3b-instruct-2512-q4_K_M"
-HF_MODELS=("hexgrad/Kokoro-82M" "nvidia/parakeet-tdt-0.6b-v3" "Qwen/Qwen3-TTS-12Hz-1.7B-Base")
+LLM="ministral-3:3b-instruct-2512-q4_K_M"
+MLX_MODELS=("mlx-community/Kokoro-82M-4bit" "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-4bit" "mlx-community/parakeet-tdt-0.6b-v3")
+CUDA_MODELS=("hexgrad/Kokoro-82M" "nvidia/parakeet-tdt-0.6b-v3" "Qwen/Qwen3-TTS-12Hz-1.7B-Base")
 
 usage() {
   cat <<'EOF'
-Usage: ova.sh [OPTIONS] <command>
+Usage: ./ova.sh [OPTIONS] <command>
 
 Options:
   OVA_PROFILE=<profile>  Set the profile to use (default: default)
@@ -35,8 +36,8 @@ Commands:
   help      Show this message
 
 Example:
-  ova.sh install --cuda
-  OVA_PROFILE=dua ova.sh start
+  ./ova.sh install --cuda
+  OVA_PROFILE=dua ./ova.sh start
 EOF
 }
 
@@ -247,10 +248,24 @@ ensure_ollama_model() {
 }
 
 ensure_hf_models() {
+  local backend=$1
   ensure_cmd uvx
+  local -a models
+  case "$backend" in
+    cuda)
+      models=("${CUDA_MODELS[@]}")
+      ;;
+    mlx)
+      models=("${MLX_MODELS[@]}")
+      ;;
+    *)
+      die "unknown backend for HF models: $backend (expected cuda or mlx)"
+      ;;
+  esac
+
   local cache_list
   cache_list="$(uvx hf cache list 2>/dev/null || true)"
-  for repo_id in "${HF_MODELS[@]}"; do
+  for repo_id in "${models[@]}"; do
     if [[ -n "$cache_list" ]] && echo "$cache_list" | grep -Fq "$repo_id"; then
       echo "HF model present: $repo_id"
     else
@@ -295,8 +310,8 @@ case "$cmd" in
     else
       uv pip install -e ".[mlx]"
     fi
-    ensure_ollama_model "$CHAT_MODEL"
-    ensure_hf_models
+    ensure_ollama_model "$LLM"
+    ensure_hf_models "$install_backend"
     ;;
   start)
     ensure_cmd uv
