@@ -2,11 +2,13 @@ import io
 import wave
 from pathlib import Path
 
-from mlx_audio.tts.generate import generate_audio
-from mlx_audio.tts.utils import load_model
+import mlx.core as mx
+from mlx_audio.stt.utils import load_model as load_asr_model
+from mlx_audio.tts.generate import load_audio as load_tts_ref_audio
+from mlx_audio.tts.utils import load_model as load_tts_model
 from ollama import chat
 
-from .audio import numpy_to_wav_bytes, resample
+from .mlx_audio import mx_to_wav_bytes
 from .utils import logger
 
 DEFAULT_SR = 24000  # default sample rate
@@ -26,10 +28,41 @@ class OVAPipeline:
             (profile_dir / f).is_file() for f in required_files
         ):
             self.profile = profile
-            self.tts = self._tts_with_voice_clone
+            self.ref_audio = None
+            self.ref_text = (profile_dir / "ref_text.txt").read_text(
+                encoding="utf-8"
+            ).strip()
+
+            try:
+                self.ref_audio = load_tts_ref_audio(
+                    str(profile_dir / "ref_audio.wav"), sample_rate=DEFAULT_SR
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to load reference audio for profile '%s': %s",
+                    profile,
+                    exc,
+                )
+
+            try:
+                self.tts_model = load_tts_model(VOICE_CLONE_TTS_MODEL)
+                if self.ref_audio is None or not self.ref_text:
+                    raise RuntimeError("Missing reference audio/text for voice cloning")
+            except Exception as exc:
+                logger.warning(
+                    "Failed to load voice-clone TTS model '%s': %s. Falling back to '%s'.",
+                    VOICE_CLONE_TTS_MODEL,
+                    exc,
+                    DEFAULT_TTS_MODEL,
+                )
+                self.tts_model = load_tts_model(DEFAULT_TTS_MODEL)
+                self.ref_audio = None
+                self.ref_text = None
         else:
             self.profile = "default"
-            self.tts = self._tts
+            self.tts_model = load_tts_model(DEFAULT_TTS_MODEL)
+            self.ref_audio = None
+            self.ref_text = None
             if profile != "default":
                 logger.warning(
                     (
@@ -38,115 +71,37 @@ class OVAPipeline:
                     )
                 )
 
-        self.device = get_device()
+        self.context = [
+            {"role": "system", "content": "You are a helpful voice assistant"}
+        ]
 
-        with open(profile_dir / "prompt.txt", "r", encoding="utf-8") as f:
-            self.system_prompt = f.read().strip()
-
-        self.context = [{"role": "system", "content": self.system_prompt}]
-
-        # initialize TTS
-        if self.tts.__name__ == "_tts_with_voice_clone":  # voice cloning
-            self.tts_model = Qwen3TTSModel.from_pretrained(
-                VOICE_CLONE_TTS_MODEL,
-                device_map=self.device,
-                dtype=torch.bfloat16,
-                # attn_implementation="flash_attention_2",
-            )
-
-            with open(profile_dir / "ref_text.txt", "r", encoding="utf-8") as f:
-                ref_text = f.read().strip()
-
-            self.voice_clone_prompt_items = self.tts_model.create_voice_clone_prompt(
-                ref_audio=str(profile_dir / "ref_audio.wav"),
-                ref_text=ref_text,
-                x_vector_only_mode=False,
-            )
-        else:  # default / super-fast TTS
-            self.tts_model = KPipeline(
-                lang_code="a", repo_id=DEFAULT_TTS_MODEL
-            )  # 'a' => US/American English
-
-            # warm up
-            self.tts_model("Just testing!", voice=DEFAULT_TTS_VOICE)
+        # warm up TTS
+        self.tts_model.generate(
+            "Just testing",
+            ref_audio=self.ref_audio,
+            ref_text=self.ref_text,
+        )
 
         # initialize ASR
-        self.asr_model = nemo_asr.models.ASRModel.from_pretrained(
-            model_name=DEFAULT_ASR_MODEL
-        )
+        self.asr_model = load_asr_model(DEFAULT_ASR_MODEL)
 
         # initialize chat model
         self.chat_model = DEFAULT_CHAT_MODEL
 
-    def _decode_asr(
-        self, audio_tensor: torch.Tensor, length_tensor: torch.Tensor
-    ) -> str:
-        self.asr_model.eval()
-        with torch.inference_mode():
-            out = self.asr_model(
-                input_signal=audio_tensor, input_signal_length=length_tensor
+    def tts(self, text: str) -> bytes:
+        results = list(
+            self.tts_model.generate(
+                text=text,
+                ref_audio=self.ref_audio,
+                ref_text=self.ref_text,
             )
-
-            if isinstance(out, (tuple, list)) and len(out) >= 2:
-                logits, logit_lengths = out[0], out[1]
-            elif isinstance(out, dict):
-                logits = out.get("logits", out.get("encoded"))
-                logit_lengths = out.get("logit_lengths", out.get("encoded_len"))
-                if logits is None or logit_lengths is None:
-                    raise RuntimeError(
-                        f"Unexpected model output keys: {list(out.keys())}"
-                    )
-            else:
-                raise RuntimeError(f"Unexpected model output type: {type(out)}")
-
-            decoding = getattr(self.asr_model, "decoding", None)
-            if decoding is None:
-                raise RuntimeError("Model has no `decoding`; cannot decode.")
-
-            if hasattr(decoding, "ctc_decoder_predictions_tensor"):
-                texts = decoding.ctc_decoder_predictions_tensor(logits, logit_lengths)
-            elif hasattr(decoding, "rnnt_decoder_predictions_tensor"):
-                texts = decoding.rnnt_decoder_predictions_tensor(logits, logit_lengths)
-            else:
-                raise RuntimeError(
-                    "No supported decoder method found on `asr_model.decoding`."
-                )
-
-        # Extract text from Hypothesis object if needed
-        if texts and len(texts) > 0:
-            text = texts[0]
-            if hasattr(text, "text"):
-                return text.text.strip()
-            elif isinstance(text, str):
-                return text.strip()
-            else:
-                return str(text).strip()
-
-        return ""
-
-    def _tts(self, text: str) -> bytes:
-        generator = self.tts_model(text, voice=DEFAULT_TTS_VOICE)
-
-        chunks = []
-        for _, _, audio in generator:
-            audio = np.asarray(audio, dtype=np.float32)
-            if audio.size > 0:
-                chunks.append(audio)
-
-        arr = np.concatenate(chunks) if chunks else np.array([], dtype=np.float32)
-
-        wav_bytes = numpy_to_wav_bytes(arr, sr=DEFAULT_SR)
-
-        return wav_bytes
-
-    def _tts_with_voice_clone(self, text: str) -> bytes:
-        wavs, sr = self.tts_model.generate_voice_clone(
-            text=text,
-            language="English",
-            voice_clone_prompt=self.voice_clone_prompt_items,
         )
 
-        wav_bytes = numpy_to_wav_bytes(wavs[0], sr)
+        segments = [r.audio for r in results]
+
+        audio = mx.concatenate(segments, axis=0)
+
+        wav_bytes = mx_to_wav_bytes(audio, sr=DEFAULT_SR)
 
         return wav_bytes
 
@@ -157,74 +112,7 @@ class OVAPipeline:
             src_sr = wf.getframerate()
             num_frames = wf.getnframes()
             pcm = wf.readframes(num_frames)
-
-        # PCM -> float32 in [-1, 1]
-        if sampwidth == 1:
-            audio = np.frombuffer(pcm, dtype=np.uint8).astype(np.int16) - 128
-            audio = audio.astype(np.float32) / 128.0
-        elif sampwidth == 2:
-            audio = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
-        elif sampwidth == 4:
-            a_f32 = np.frombuffer(pcm, dtype=np.float32)
-            if (
-                np.isfinite(a_f32).all()
-                and (np.abs(a_f32).max() <= 10.0)
-                and (np.abs(a_f32).mean() < 0.5)
-            ):
-                audio = a_f32.astype(np.float32)
-            else:
-                audio = (
-                    np.frombuffer(pcm, dtype=np.int32).astype(np.float32) / 2147483648.0
-                )
-        else:
-            raise ValueError(f"Unsupported WAV sample width: {sampwidth} bytes")
-
-        # Downmix to mono if needed
-        if num_channels > 1:
-            audio = audio.reshape(-1, num_channels).mean(axis=1).astype(np.float32)
-
-        # Resample to model SR
-        model_sr = int(
-            getattr(getattr(self.asr_model, "cfg", None), "sample_rate", DEFAULT_SR)
-        )
-        audio = resample(audio, src_sr, model_sr)
-
-        # Torch tensors on model device
-        device = next(self.asr_model.parameters()).device
-        audio_tensor = (
-            torch.from_numpy(audio).unsqueeze(0).to(device=device, dtype=torch.float32)
-        )  # [1, T]
-        length_tensor = torch.tensor([audio.shape[0]], device=device, dtype=torch.long)
-
-        try:
-            return self._decode_asr(audio_tensor, length_tensor)
-        except RuntimeError as exc:
-            exc_msg = str(exc).lower()
-            is_cuda_failure = device.type == "cuda" and (
-                "cufft" in exc_msg
-                or "cuda out of memory" in exc_msg
-                or "cublas" in exc_msg
-                or "cuda error" in exc_msg
-            )
-            if not is_cuda_failure:
-                raise
-
-            logger.warning(
-                "ASR failed on CUDA (%s). Falling back to CPU transcription.", exc
-            )
-            self.asr_model = self.asr_model.to("cpu")
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-
-            audio_tensor = (
-                torch.from_numpy(audio)
-                .unsqueeze(0)
-                .to(device="cpu", dtype=torch.float32)
-            )
-            length_tensor = torch.tensor(
-                [audio.shape[0]], device="cpu", dtype=torch.long
-            )
-            return self._decode_asr(audio_tensor, length_tensor)
+        pass
 
     def chat(self, text: str) -> str:
         self.context.append({"role": "user", "content": text})

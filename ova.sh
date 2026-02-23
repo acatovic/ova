@@ -307,11 +307,11 @@ case "$cmd" in
     printf 'backend=%s\n' "$install_backend" > "$ROOT_DIR/.config"
     echo "Wrote backend config: $ROOT_DIR/.config"
 
-    uv venv
+    uv venv --clear
     if [[ "$install_backend" == "cuda" ]]; then
       uv pip install -e ".[cuda]"
     else
-      uv pip install -e ".[mlx]"
+      uv pip install --prerelease=allow -e ".[mlx]"
     fi
     ensure_ollama_model "$LLM"
     ensure_hf_models "$install_backend"

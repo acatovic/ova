@@ -23,6 +23,7 @@ dependencies = [
 # Apple Silicon / MLX backend
 mlx = [
     "mlx-audio>=0.3.1",
+    #"mlx-audio",
 ]
 
 # Torch / CUDA backend
