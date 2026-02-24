@@ -15,10 +15,23 @@ FRONTEND_LOG="$OVA_DIR/frontend.log"
 BACKEND_PORT=5173
 FRONTEND_PORT=8000
 
-OVA_PROFILE="${OVA_PROFILE:-default}"
+if [[ -n "${OVA_PROFILE:-}" ]]; then
+  OVA_PROFILE="${OVA_PROFILE}"
+else
+  backend_config="$ROOT_DIR/.config"
+  backend="cuda"
+  if [[ -f "$backend_config" ]]; then
+    backend="$(awk -F= 'NF==2{print $2}' "$backend_config" | tail -n 1)"
+  fi
+  if [[ "$backend" == "mlx" ]]; then
+    OVA_PROFILE="sydney"
+  else
+    OVA_PROFILE="default"
+  fi
+fi
 
 LLM="ministral-3:3b-instruct-2512-q4_K_M"
-MLX_MODELS=("mlx-community/Kokoro-82M-4bit" "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-4bit" "mlx-community/parakeet-tdt-0.6b-v3")
+MLX_MODELS=("mlx-community/Kokoro-82M-4bit" "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit" "mlx-community/parakeet-tdt-0.6b-v3")
 CUDA_MODELS=("hexgrad/Kokoro-82M" "nvidia/parakeet-tdt-0.6b-v3" "Qwen/Qwen3-TTS-12Hz-1.7B-Base")
 
 usage() {

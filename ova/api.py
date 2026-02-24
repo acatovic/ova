@@ -7,13 +7,17 @@ from fastapi.responses import Response
 with open(".config") as f:
     backend = f.read().strip().split("=")[1]
 
+DEFAULT_OVA_PROFILE = "default"
+
 if backend == "cuda":
     from .pipeline import OVAPipeline
 else:
     # mlx
     from .mlx_pipeline import OVAPipeline
 
-OVA_PROFILE = os.getenv("OVA_PROFILE", "default")
+    DEFAULT_OVA_PROFILE = "sydney"
+
+OVA_PROFILE = os.getenv("OVA_PROFILE", DEFAULT_OVA_PROFILE)
 
 
 app = FastAPI()
@@ -33,16 +37,16 @@ pipeline = OVAPipeline(profile=OVA_PROFILE)
 async def chat_request_handler(request: Request):
     audio_in = await request.body()
 
-    # transcribed_text = pipeline.transcribe(audio_in)
+    transcribed_text = pipeline.transcribe(audio_in)
 
-    # if not transcribed_text:
-    #    # return "empty" bytes if no transcription
-    #    return Response(content=bytes(), media_type="audio/wav")
+    if not transcribed_text:
+        # return "empty" bytes if no transcription
+        return Response(content=bytes(), media_type="audio/wav")
 
-    # chat_response = pipeline.chat(transcribed_text)
-    chat_response = pipeline.chat(
-        "Pretend you are Sydney Sweeney and say something funny."
-    )
+    chat_response = pipeline.chat(transcribed_text)
+    # chat_response = pipeline.chat(
+    #    "Pretend you are Sydney Sweeney and say something funny."
+    # )
 
     audio_out = pipeline.tts(chat_response)
 

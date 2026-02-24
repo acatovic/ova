@@ -1,8 +1,9 @@
-import io
-import wave
+import os
+import tempfile
 from pathlib import Path
 
 import mlx.core as mx
+from mlx_audio.stt.generate import generate_transcription
 from mlx_audio.stt.utils import load_model as load_asr_model
 from mlx_audio.tts.generate import load_audio as load_tts_ref_audio
 from mlx_audio.tts.utils import load_model as load_tts_model
@@ -12,72 +13,47 @@ from .mlx_audio import mx_to_wav_bytes
 from .utils import logger
 
 DEFAULT_SR = 24000  # default sample rate
-DEFAULT_TTS_MODEL = "mlx-community/Kokoro-82M-4bit"
-DEFAULT_TTS_VOICE = "af_heart"
-VOICE_CLONE_TTS_MODEL = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-4bit"
+VOICE_CLONE_TTS_MODEL = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit"
 DEFAULT_CHAT_MODEL = "ministral-3:3b-instruct-2512-q4_K_M"
 DEFAULT_ASR_MODEL = "mlx-community/parakeet-tdt-0.6b-v3"
 
 
 class OVAPipeline:
-    def __init__(self, profile: str = "default"):
+    def __init__(self, profile: str = "sydney"):
         required_files = ["prompt.txt", "ref_audio.wav", "ref_text.txt"]
-        profile_dir = Path(f"profiles/{profile}/")
+        repo_root = Path(__file__).resolve().parent.parent
+        profile_dir = repo_root / "profiles" / profile
 
-        if profile_dir.is_dir() and all(
-            (profile_dir / f).is_file() for f in required_files
-        ):
-            self.profile = profile
-            self.ref_audio = None
-            self.ref_text = (profile_dir / "ref_text.txt").read_text(
-                encoding="utf-8"
-            ).strip()
-
-            try:
-                self.ref_audio = load_tts_ref_audio(
-                    str(profile_dir / "ref_audio.wav"), sample_rate=DEFAULT_SR
-                )
-            except Exception as exc:
-                logger.warning(
-                    "Failed to load reference audio for profile '%s': %s",
-                    profile,
-                    exc,
-                )
-
-            try:
-                self.tts_model = load_tts_model(VOICE_CLONE_TTS_MODEL)
-                if self.ref_audio is None or not self.ref_text:
-                    raise RuntimeError("Missing reference audio/text for voice cloning")
-            except Exception as exc:
-                logger.warning(
-                    "Failed to load voice-clone TTS model '%s': %s. Falling back to '%s'.",
-                    VOICE_CLONE_TTS_MODEL,
-                    exc,
-                    DEFAULT_TTS_MODEL,
-                )
-                self.tts_model = load_tts_model(DEFAULT_TTS_MODEL)
-                self.ref_audio = None
-                self.ref_text = None
-        else:
-            self.profile = "default"
-            self.tts_model = load_tts_model(DEFAULT_TTS_MODEL)
-            self.ref_audio = None
-            self.ref_text = None
-            if profile != "default":
-                logger.warning(
-                    (
-                        f"Unknown OVA profile '{profile}' or missing the following files in 'profiles/{profile}/' directory: "
-                        f"{', '.join(required_files)}. Using 'default' profile."
-                    )
-                )
-
-        self.context = [
-            {"role": "system", "content": "You are a helpful voice assistant"}
+        missing = [
+            filename
+            for filename in required_files
+            if not (profile_dir / filename).is_file()
         ]
+        if missing:
+            missing_text = ", ".join(missing)
+            raise RuntimeError(
+                "Unable to load voice profile "
+                f"'{profile}' (missing: {missing_text}) at {profile_dir}"
+            )
+
+        self.profile = profile
+        self.ref_text = (profile_dir / "ref_text.txt").read_text(
+            encoding="utf-8"
+        ).strip()
+        self.ref_audio = load_tts_ref_audio(
+            str(profile_dir / "ref_audio.wav"), sample_rate=DEFAULT_SR
+        )
+
+        self.system_prompt = (profile_dir / "prompt.txt").read_text(
+            encoding="utf-8"
+        ).strip()
+        self.context = [{"role": "system", "content": self.system_prompt}]
+
+        self.tts_model = load_tts_model(VOICE_CLONE_TTS_MODEL)
 
         # warm up TTS
         self.tts_model.generate(
-            "Just testing",
+            "How'dy folks, we are just taking our TTS for a warmup!",
             ref_audio=self.ref_audio,
             ref_text=self.ref_text,
         )
@@ -106,13 +82,27 @@ class OVAPipeline:
         return wav_bytes
 
     def transcribe(self, wav_bytes: bytes) -> str:
-        with wave.open(io.BytesIO(wav_bytes), "rb") as wf:
-            num_channels = wf.getnchannels()
-            sampwidth = wf.getsampwidth()
-            src_sr = wf.getframerate()
-            num_frames = wf.getnframes()
-            pcm = wf.readframes(num_frames)
-        pass
+        if not wav_bytes:
+            return ""
+
+        with tempfile.TemporaryDirectory(prefix="ova_transcribe_") as tmp_dir:
+            audio_path = os.path.join(tmp_dir, "audio.wav")
+            with open(audio_path, "wb") as audio_file:
+                audio_file.write(wav_bytes)
+
+            transcript_path = os.path.join(tmp_dir, "transcript")
+            result = generate_transcription(
+                model=self.asr_model,
+                audio=audio_path,
+                output_path=transcript_path,
+                format="txt",
+            )
+
+        if hasattr(result, "text"):
+            return result.text.strip()
+        if isinstance(result, str):
+            return result.strip()
+        return str(result).strip()
 
     def chat(self, text: str) -> str:
         self.context.append({"role": "user", "content": text})

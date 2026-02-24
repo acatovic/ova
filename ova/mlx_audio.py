@@ -14,9 +14,16 @@ def mx_to_wav_bytes(arr: mx.array, sr: int) -> bytes:
         arr = mx.clip(arr, -1.0, 1.0)
 
     # ---- RMS normalize (mlx version) ----
-    rms = mx.sqrt(mx.mean(arr * arr))
     eps = 1e-8
-    arr = arr / mx.maximum(rms, eps)
+    target_rms = 0.15
+    peak_limit = 0.90
+    rms = mx.sqrt(mx.mean(arr * arr) + eps)
+    arr = arr * (target_rms / mx.maximum(rms, eps))
+
+    # prevent clipping
+    peak = mx.max(mx.abs(arr)) + eps
+    if peak > peak_limit:
+        arr = arr * (peak_limit / peak)
 
     arr = mx.clip(arr, -1.0, 1.0)
 
