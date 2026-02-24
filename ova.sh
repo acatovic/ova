@@ -31,7 +31,7 @@ else
 fi
 
 LLM="ministral-3:3b-instruct-2512-q4_K_M"
-MLX_MODELS=("mlx-community/Kokoro-82M-4bit" "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-4bit" "mlx-community/parakeet-tdt-0.6b-v3")
+MLX_MODELS=("mlx-community/Qwen3-TTS-12Hz-1.7B-Base-4bit" "mlx-community/parakeet-tdt-0.6b-v3")
 CUDA_MODELS=("hexgrad/Kokoro-82M" "nvidia/parakeet-tdt-0.6b-v3" "Qwen/Qwen3-TTS-12Hz-1.7B-Base")
 
 usage() {

@@ -116,7 +116,6 @@ class OVAPipeline:
         response = (
             response.message.content.replace("**", "")
             .replace("_", "")
-            .replace("__", "")
             .replace("#", "")
             .strip()
         )
