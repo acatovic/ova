@@ -31,6 +31,7 @@ When using "profiles" (or voice cloning), there is an additional pre-step where 
 
 ## TO-DO
 
+- [x] Add Apple Silicon (MLX) support
 - [ ] Add Voice Activity Detection (VAD) client-side (e.g. see  https://docs.vad.ricky0123.com/)
 - [ ] Remove the need for prepared transcript for voice cloning - use ASR as part of a "warmup"
 - [ ] Add orchestration to detect more complex tasks (e.g. requiring GPT/Claude) or whether tool calls (web search, file search, other cli/API calls are needed)
@@ -56,7 +57,11 @@ https://github.com/user-attachments/assets/a296dbf7-9fa9-4904-bf22-d0cdc1e625a4
 Fetch Python deps and HF/Ollama models:
 
 ```bash
-./ova.sh install
+# NVIDIA/CUDA
+./ova.sh install --cuda
+
+# Apple/MLX
+./ova.sh install --mlx
 ```
 
 ## Start

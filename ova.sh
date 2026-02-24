@@ -15,26 +15,42 @@ FRONTEND_LOG="$OVA_DIR/frontend.log"
 BACKEND_PORT=5173
 FRONTEND_PORT=8000
 
-OVA_PROFILE="${OVA_PROFILE:-default}"
+if [[ -n "${OVA_PROFILE:-}" ]]; then
+  OVA_PROFILE="${OVA_PROFILE}"
+else
+  backend_config="$ROOT_DIR/.config"
+  backend="cuda"
+  if [[ -f "$backend_config" ]]; then
+    backend="$(awk -F= 'NF==2{print $2}' "$backend_config" | tail -n 1)"
+  fi
+  if [[ "$backend" == "mlx" ]]; then
+    OVA_PROFILE="sydney"
+  else
+    OVA_PROFILE="default"
+  fi
+fi
 
-CHAT_MODEL="ministral-3:3b-instruct-2512-q4_K_M"
-HF_MODELS=("hexgrad/Kokoro-82M" "nvidia/parakeet-tdt-0.6b-v3" "Qwen/Qwen3-TTS-12Hz-1.7B-Base")
+LLM="ministral-3:3b-instruct-2512-q4_K_M"
+MLX_MODELS=("mlx-community/Kokoro-82M-4bit" "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-4bit" "mlx-community/parakeet-tdt-0.6b-v3")
+CUDA_MODELS=("hexgrad/Kokoro-82M" "nvidia/parakeet-tdt-0.6b-v3" "Qwen/Qwen3-TTS-12Hz-1.7B-Base")
 
 usage() {
   cat <<'EOF'
-Usage: ova [OPTIONS] <command>
+Usage: ./ova.sh [OPTIONS] <command>
 
 Options:
   OVA_PROFILE=<profile>  Set the profile to use (default: default)
 
 Commands:
-  install   Sync uv environment and fetch models
+  install --cuda | --mlx
+            Create uv env, install deps for CUDA/MLX, and fetch models
   start     Start backend + frontend server (non-blocking)
   stop      Stop running services
   help      Show this message
 
 Example:
-  OVA_PROFILE=dua ova start
+  ./ova.sh install --cuda
+  OVA_PROFILE=dua ./ova.sh start
 EOF
 }
 
@@ -47,12 +63,8 @@ ensure_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "missing '$1' in PATH"
 }
 
-ensure_uv_lock() {
-  [[ -f "$ROOT_DIR/uv.lock" ]] || die "uv.lock not found in project root"
-}
-
 ensure_pip() {
-  if uv run python3 - <<'PY'
+  if uv run --no-sync python3 - <<'PY'
 try:
     import pip  # noqa: F401
 except Exception as exc:
@@ -64,7 +76,7 @@ PY
   fi
 
   echo "Installing pip into uv venv"
-  if uv run python3 -m ensurepip --upgrade; then
+  if uv run --no-sync python3 -m ensurepip --upgrade; then
     return 0
   fi
   uv pip install --upgrade pip
@@ -249,10 +261,24 @@ ensure_ollama_model() {
 }
 
 ensure_hf_models() {
+  local backend=$1
   ensure_cmd uvx
+  local -a models
+  case "$backend" in
+    cuda)
+      models=("${CUDA_MODELS[@]}")
+      ;;
+    mlx)
+      models=("${MLX_MODELS[@]}")
+      ;;
+    *)
+      die "unknown backend for HF models: $backend (expected cuda or mlx)"
+      ;;
+  esac
+
   local cache_list
   cache_list="$(uvx hf cache list 2>/dev/null || true)"
-  for repo_id in "${HF_MODELS[@]}"; do
+  for repo_id in "${models[@]}"; do
     if [[ -n "$cache_list" ]] && echo "$cache_list" | grep -Fq "$repo_id"; then
       echo "HF model present: $repo_id"
     else
@@ -263,20 +289,48 @@ ensure_hf_models() {
 }
 
 cmd="${1:-help}"
+if [[ $# -gt 0 ]]; then
+  shift
+fi
 
 case "$cmd" in
   install)
     ensure_cmd uv
     ensure_cmd ollama
-    ensure_uv_lock
-    uv sync --frozen
-    ensure_pip
-    ensure_ollama_model "$CHAT_MODEL"
-    ensure_hf_models
+    install_backend=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --cuda)
+          [[ -z "$install_backend" ]] || die "install accepts exactly one of --cuda or --mlx"
+          install_backend="cuda"
+          ;;
+        --mlx)
+          [[ -z "$install_backend" ]] || die "install accepts exactly one of --cuda or --mlx"
+          install_backend="mlx"
+          ;;
+        *)
+          die "unknown install option: $1 (expected --cuda or --mlx)"
+          ;;
+      esac
+      shift
+    done
+
+    [[ -n "$install_backend" ]] || die "install requires one of --cuda or --mlx"
+
+    printf 'backend=%s\n' "$install_backend" > "$ROOT_DIR/.config"
+    echo "Wrote backend config: $ROOT_DIR/.config"
+
+    uv venv --clear
+    if [[ "$install_backend" == "cuda" ]]; then
+      uv pip install -e ".[cuda]"
+    else
+      uv pip install --prerelease=allow -e ".[mlx]"
+    fi
+    ensure_ollama_model "$LLM"
+    ensure_hf_models "$install_backend"
     ;;
   start)
     ensure_cmd uv
-    ensure_uv_lock
     echo "Starting Outrageous Voice Assistant..."
     echo "Starting front-end..."
     if is_running "$FRONTEND_PID"; then
@@ -287,7 +341,7 @@ case "$cmd" in
       fi
     else
       start_detached "$FRONTEND_LOG" "$FRONTEND_PID" "$FRONTEND_GROUP" \
-        uv run python3 -m http.server
+        uv run --no-sync python3 -m http.server
       wait_for_port "Web server" "$FRONTEND_PORT" "$FRONTEND_PID" "$FRONTEND_LOG" 5 \
         "Front-end started successfully (port $FRONTEND_PORT)"
     fi
@@ -301,7 +355,7 @@ case "$cmd" in
       fi
     else
       start_detached "$BACKEND_LOG" "$BACKEND_PID" "$BACKEND_GROUP" \
-        bash -c "OVA_PROFILE='$OVA_PROFILE' uv run uvicorn ova.api:app --reload --port \"$BACKEND_PORT\""
+        bash -c "OVA_PROFILE='$OVA_PROFILE' uv run --no-sync uvicorn ova.api:app --reload --port \"$BACKEND_PORT\""
       wait_for_log_message "Backend" "$BACKEND_LOG" "$BACKEND_PID" \
         "Application startup complete." 60 1 \
         "Back-end started successfully (port $BACKEND_PORT)"

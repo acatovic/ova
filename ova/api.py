@@ -1,13 +1,23 @@
 import os
 
 from fastapi import FastAPI, Request
-from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 
-from .pipeline import OVAPipeline
+with open(".config") as f:
+    backend = f.read().strip().split("=")[1]
 
+DEFAULT_OVA_PROFILE = "default"
 
-OVA_PROFILE = os.getenv("OVA_PROFILE", "default")
+if backend == "cuda":
+    from .pipeline import OVAPipeline
+else:
+    # mlx
+    from .mlx_pipeline import OVAPipeline
+
+    DEFAULT_OVA_PROFILE = "sydney"
+
+OVA_PROFILE = os.getenv("OVA_PROFILE", DEFAULT_OVA_PROFILE)
 
 
 app = FastAPI()
@@ -21,6 +31,7 @@ app.add_middleware(
 )
 
 pipeline = OVAPipeline(profile=OVA_PROFILE)
+
 
 @app.post("/chat", response_class=Response)
 async def chat_request_handler(request: Request):
