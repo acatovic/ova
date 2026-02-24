@@ -10,11 +10,8 @@ from mlx_audio.tts.utils import load_model as load_tts_model
 from ollama import chat
 
 from .mlx_audio import mx_to_wav_bytes
-from .utils import logger
 
 DEFAULT_SR = 24000  # default sample rate
-# VOICE_CLONE_TTS_MODEL = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit"
-# VOICE_CLONE_TTS_MODEL = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16"
 VOICE_CLONE_TTS_MODEL = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-4bit"
 DEFAULT_CHAT_MODEL = "ministral-3:3b-instruct-2512-q4_K_M"
 DEFAULT_ASR_MODEL = "mlx-community/parakeet-tdt-0.6b-v3"
