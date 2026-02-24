@@ -1,8 +1,11 @@
+import base64
+import json
 import os
+import re
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 
 with open(".config") as f:
     backend = f.read().strip().split("=")[1]
@@ -33,6 +36,14 @@ app.add_middleware(
 pipeline = OVAPipeline(profile=OVA_PROFILE)
 
 
+def split_sentences(text: str) -> list[str]:
+    cleaned = text.strip()
+    if not cleaned:
+        return []
+    parts = re.split(r"(?<=[.!?])\s+", cleaned)
+    return [p.strip() for p in parts if p.strip()]
+
+
 @app.post("/chat", response_class=Response)
 async def chat_request_handler(request: Request):
     audio_in = await request.body()
@@ -40,14 +51,22 @@ async def chat_request_handler(request: Request):
     transcribed_text = pipeline.transcribe(audio_in)
 
     if not transcribed_text:
-        # return "empty" bytes if no transcription
-        return Response(content=bytes(), media_type="audio/wav")
+        return Response(content=b"", media_type="application/x-ndjson")
 
     chat_response = pipeline.chat(transcribed_text)
-    # chat_response = pipeline.chat(
-    #    "Pretend you are Sydney Sweeney and say something funny."
-    # )
 
-    audio_out = pipeline.tts(chat_response)
+    sentences = split_sentences(chat_response)
+    if not sentences:
+        sentences = [chat_response.strip()]
 
-    return Response(content=audio_out, media_type="audio/wav")
+    def iter_audio_chunks():
+        for idx, sentence in enumerate(sentences):
+            wav_bytes = pipeline.tts(sentence)
+            payload = {
+                "index": idx,
+                "text": sentence,
+                "audio": base64.b64encode(wav_bytes).decode("ascii"),
+            }
+            yield (json.dumps(payload) + "\n").encode("utf-8")
+
+    return StreamingResponse(iter_audio_chunks(), media_type="application/x-ndjson")

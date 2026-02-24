@@ -13,7 +13,9 @@ from .mlx_audio import mx_to_wav_bytes
 from .utils import logger
 
 DEFAULT_SR = 24000  # default sample rate
-VOICE_CLONE_TTS_MODEL = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit"
+# VOICE_CLONE_TTS_MODEL = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit"
+# VOICE_CLONE_TTS_MODEL = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16"
+VOICE_CLONE_TTS_MODEL = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-4bit"
 DEFAULT_CHAT_MODEL = "ministral-3:3b-instruct-2512-q4_K_M"
 DEFAULT_ASR_MODEL = "mlx-community/parakeet-tdt-0.6b-v3"
 
@@ -37,16 +39,16 @@ class OVAPipeline:
             )
 
         self.profile = profile
-        self.ref_text = (profile_dir / "ref_text.txt").read_text(
-            encoding="utf-8"
-        ).strip()
+        self.ref_text = (
+            (profile_dir / "ref_text.txt").read_text(encoding="utf-8").strip()
+        )
         self.ref_audio = load_tts_ref_audio(
             str(profile_dir / "ref_audio.wav"), sample_rate=DEFAULT_SR
         )
 
-        self.system_prompt = (profile_dir / "prompt.txt").read_text(
-            encoding="utf-8"
-        ).strip()
+        self.system_prompt = (
+            (profile_dir / "prompt.txt").read_text(encoding="utf-8").strip()
+        )
         self.context = [{"role": "system", "content": self.system_prompt}]
 
         self.tts_model = load_tts_model(VOICE_CLONE_TTS_MODEL)

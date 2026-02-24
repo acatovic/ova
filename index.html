@@ -171,6 +171,7 @@
       const subEl = document.getElementById("sub");
 
       let currentAudio = null;
+      let currentAbort = null;
 
       function setState(state, { label, sub, ariaLabel } = {}) {
         btn.classList.remove("state-idle", "state-recording", "state-waiting", "state-playing");
@@ -228,6 +229,33 @@
         return buffer;
       }
 
+      function base64ToUint8Array(base64) {
+        const binary = atob(base64);
+        const len = binary.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+        return bytes;
+      }
+
+      async function playWavBlob(blob, { onEnded, onError } = {}) {
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        currentAudio = audio;
+
+        audio.onended = () => {
+          URL.revokeObjectURL(url);
+          if (currentAudio === audio) currentAudio = null;
+          if (onEnded) onEnded();
+        };
+        audio.onerror = () => {
+          URL.revokeObjectURL(url);
+          if (currentAudio === audio) currentAudio = null;
+          if (onError) onError();
+        };
+
+        await audio.play();
+      }
+
       async function fetchAndPlayTts(wavBlob) {
         setState("waiting", { label: "Sending…", sub: "Waiting for response", ariaLabel: "Waiting for response" });
 
@@ -236,11 +264,19 @@
           currentAudio.pause();
           currentAudio = null;
         }
+        if (currentAbort) {
+          currentAbort.abort();
+          currentAbort = null;
+        }
+
+        const controller = new AbortController();
+        currentAbort = controller;
 
         const res = await fetch(API_URL, {
           method: "POST",
-          headers: { "Content-Type": "audio/wav" },
+          headers: { "Content-Type": "audio/wav", "Accept": "application/x-ndjson" },
           body: wavBlob,
+          signal: controller.signal,
         });
 
         if (!res.ok) {
@@ -248,27 +284,90 @@
           return;
         }
 
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
+        const contentType = (res.headers.get("content-type") || "").toLowerCase();
+        if (!contentType.includes("application/x-ndjson") || !res.body) {
+          const blob = await res.blob();
+          try {
+            await playWavBlob(blob, {
+              onEnded: () => setState("idle", { label: "Tap to talk", sub: "Tap again to send", ariaLabel: "Tap to talk" }),
+              onError: () => setState("idle", { label: "Tap to talk", sub: "Audio playback failed.", ariaLabel: "Tap to talk" }),
+            });
+            setState("playing", { label: "Playing…", sub: "Tap to interrupt", ariaLabel: "Playing audio" });
+          } catch {
+            setState("idle", { label: "Tap to talk", sub: "Playback blocked by the browser.", ariaLabel: "Tap to talk" });
+          }
+          return;
+        }
 
-        const audio = new Audio(url);
-        currentAudio = audio;
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        const queue = [];
+        let playing = false;
+        let streamDone = false;
 
-        audio.onended = () => {
-          URL.revokeObjectURL(url);
-          if (currentAudio === audio) currentAudio = null;
-          setState("idle", { label: "Tap to talk", sub: "Tap again to send", ariaLabel: "Tap to talk" });
-        };
-        audio.onerror = () => {
-          URL.revokeObjectURL(url);
-          setState("idle", { label: "Tap to talk", sub: "Audio playback failed.", ariaLabel: "Tap to talk" });
+        const playNext = async () => {
+          if (playing || queue.length === 0) {
+            if (!playing && streamDone) {
+              setState("idle", { label: "Tap to talk", sub: "Tap again to send", ariaLabel: "Tap to talk" });
+            }
+            return;
+          }
+
+          const item = queue.shift();
+          const bytes = base64ToUint8Array(item.audio || "");
+          const blob = new Blob([bytes], { type: "audio/wav" });
+          playing = true;
+          try {
+            await playWavBlob(blob, {
+              onEnded: () => {
+                playing = false;
+                playNext();
+              },
+              onError: () => {
+                playing = false;
+                setState("idle", { label: "Tap to talk", sub: "Audio playback failed.", ariaLabel: "Tap to talk" });
+              },
+            });
+            setState("playing", { label: "Playing…", sub: "Tap to interrupt", ariaLabel: "Playing audio" });
+          } catch {
+            playing = false;
+            setState("idle", { label: "Tap to talk", sub: "Playback blocked by the browser.", ariaLabel: "Tap to talk" });
+          }
         };
 
         try {
-          await audio.play(); // should succeed because triggered by user gesture
-          setState("playing", { label: "Playing…", sub: "Tap to interrupt", ariaLabel: "Playing audio" });
-        } catch (e) {
-          setState("idle", { label: "Tap to talk", sub: "Playback blocked by the browser.", ariaLabel: "Tap to talk" });
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) {
+              streamDone = true;
+              if (!playing && queue.length === 0) {
+                setState("idle", { label: "Tap to talk", sub: "Tap again to send", ariaLabel: "Tap to talk" });
+              }
+              break;
+            }
+
+            buffer += decoder.decode(value, { stream: true });
+            let nlIndex = buffer.indexOf("\n");
+            while (nlIndex !== -1) {
+              const line = buffer.slice(0, nlIndex).trim();
+              buffer = buffer.slice(nlIndex + 1);
+              if (line) {
+                try {
+                  const payload = JSON.parse(line);
+                  queue.push(payload);
+                  if (!playing) playNext();
+                } catch {}
+              }
+              nlIndex = buffer.indexOf("\n");
+            }
+          }
+        } catch (err) {
+          if (err?.name !== "AbortError") {
+            setState("idle", { label: "Tap to talk", sub: "Stream interrupted.", ariaLabel: "Tap to talk" });
+          }
+        } finally {
+          if (currentAbort === controller) currentAbort = null;
         }
       }
 
@@ -331,6 +430,10 @@
         if (btn.classList.contains("state-playing")) {
           if (currentAudio) currentAudio.pause();
           currentAudio = null;
+          if (currentAbort) {
+            currentAbort.abort();
+            currentAbort = null;
+          }
           setState("idle", { label: "Tap to talk", sub: "Tap again to send", ariaLabel: "Tap to talk" });
           return;
         }
