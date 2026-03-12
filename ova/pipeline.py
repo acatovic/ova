@@ -7,6 +7,7 @@ import numpy as np
 import torch
 from kokoro import KPipeline
 from ollama import chat
+from omegaconf import OmegaConf
 from qwen_tts import Qwen3TTSModel
 
 from .audio import numpy_to_wav_bytes, resample
@@ -77,9 +78,53 @@ class OVAPipeline:
         self.asr_model = nemo_asr.models.ASRModel.from_pretrained(
             model_name=DEFAULT_ASR_MODEL
         )
+        self._configure_asr_decoding()
 
         # initialize chat model
         self.chat_model = DEFAULT_CHAT_MODEL
+
+    def _disable_asr_cuda_graphs(self) -> bool:
+        decoding = getattr(getattr(self.asr_model, "decoding", None), "decoding", None)
+        if decoding is None or not hasattr(decoding, "disable_cuda_graphs"):
+            return False
+
+        changed = bool(decoding.disable_cuda_graphs())
+        if changed:
+            logger.info("Disabled NeMo CUDA graph decoder for ASR.")
+        return changed
+
+    def _configure_asr_decoding(self) -> None:
+        if not str(self.device).startswith("cuda"):
+            return
+
+        decoding_cfg = getattr(getattr(self.asr_model, "cfg", None), "decoding", None)
+        if decoding_cfg is None:
+            self._disable_asr_cuda_graphs()
+            return
+
+        try:
+            decoding_cfg = OmegaConf.to_container(decoding_cfg, resolve=True)
+            if not isinstance(decoding_cfg, dict):
+                raise TypeError(f"Unexpected decoding config type: {type(decoding_cfg)}")
+
+            greedy_cfg = decoding_cfg.setdefault("greedy", {})
+            if greedy_cfg.get("use_cuda_graph_decoder") is False:
+                self._disable_asr_cuda_graphs()
+                return
+
+            greedy_cfg["use_cuda_graph_decoder"] = False
+            self.asr_model.change_decoding_strategy(
+                OmegaConf.create(decoding_cfg), verbose=False
+            )
+            logger.info(
+                "Configured ASR decoding with NeMo CUDA graph decoder disabled."
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to reconfigure ASR decoding strategy (%s). Disabling CUDA graphs directly.",
+                exc,
+            )
+            self._disable_asr_cuda_graphs()
 
     def _decode_asr(
         self, audio_tensor: torch.Tensor, length_tensor: torch.Tensor
@@ -201,8 +246,19 @@ class OVAPipeline:
 
         try:
             return self._decode_asr(audio_tensor, length_tensor)
-        except RuntimeError as exc:
+        except Exception as exc:
             exc_msg = str(exc).lower()
+            is_cuda_graph_failure = device.type == "cuda" and (
+                "not enough values to unpack" in exc_msg
+                or "too many values to unpack" in exc_msg
+            )
+            if is_cuda_graph_failure and self._disable_asr_cuda_graphs():
+                logger.warning(
+                    "ASR CUDA graph decoding failed (%s). Retrying with CUDA graphs disabled.",
+                    exc,
+                )
+                return self._decode_asr(audio_tensor, length_tensor)
+
             is_cuda_failure = device.type == "cuda" and (
                 "cufft" in exc_msg
                 or "cuda out of memory" in exc_msg
