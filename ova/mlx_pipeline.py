@@ -19,34 +19,28 @@ DEFAULT_ASR_MODEL = "mlx-community/parakeet-tdt-0.6b-v3"
 
 class OVAPipeline:
     def __init__(self, profile: str = "sydney"):
-        required_files = ["prompt.txt", "ref_audio.wav", "ref_text.txt"]
         repo_root = Path(__file__).resolve().parent.parent
         profile_dir = repo_root / "profiles" / profile
+        prompt_path = profile_dir / "prompt.txt"
+        ref_audio_path = self._find_reference_audio(profile_dir)
 
-        missing = [
-            filename
-            for filename in required_files
-            if not (profile_dir / filename).is_file()
-        ]
-        if missing:
-            missing_text = ", ".join(missing)
+        if not prompt_path.is_file() or ref_audio_path is None:
             raise RuntimeError(
                 "Unable to load voice profile "
-                f"'{profile}' (missing: {missing_text}) at {profile_dir}"
+                f"'{profile}' at {profile_dir}. Expected prompt.txt and at least one .wav file under audio/"
             )
 
         self.profile = profile
-        self.ref_text = (
-            (profile_dir / "ref_text.txt").read_text(encoding="utf-8").strip()
-        )
-        self.ref_audio = load_tts_ref_audio(
-            str(profile_dir / "ref_audio.wav"), sample_rate=DEFAULT_SR
-        )
 
         self.system_prompt = (
             (profile_dir / "prompt.txt").read_text(encoding="utf-8").strip()
         )
         self.context = [{"role": "system", "content": self.system_prompt}]
+
+        # initialize ASR
+        self.asr_model = load_asr_model(DEFAULT_ASR_MODEL)
+        self.ref_text = self._transcribe_reference_audio(ref_audio_path)
+        self.ref_audio = load_tts_ref_audio(str(ref_audio_path), sample_rate=DEFAULT_SR)
 
         self.tts_model = load_tts_model(VOICE_CLONE_TTS_MODEL)
 
@@ -57,11 +51,45 @@ class OVAPipeline:
             ref_text=self.ref_text,
         )
 
-        # initialize ASR
-        self.asr_model = load_asr_model(DEFAULT_ASR_MODEL)
-
         # initialize chat model
         self.chat_model = DEFAULT_CHAT_MODEL
+
+    def _find_reference_audio(self, profile_dir: Path) -> Path | None:
+        audio_dir = profile_dir / "audio"
+        if not audio_dir.is_dir():
+            return None
+
+        audio_files = sorted(
+            path for path in audio_dir.iterdir() if path.is_file() and path.suffix.lower() == ".wav"
+        )
+        if not audio_files:
+            return None
+
+        return audio_files[0]
+
+    def _transcribe_reference_audio(self, ref_audio_path: Path) -> str:
+        with tempfile.TemporaryDirectory(prefix="ova_profile_transcribe_") as tmp_dir:
+            transcript_path = os.path.join(tmp_dir, "transcript")
+            result = generate_transcription(
+                model=self.asr_model,
+                audio=str(ref_audio_path),
+                output_path=transcript_path,
+                format="txt",
+            )
+
+        if hasattr(result, "text"):
+            ref_text = result.text.strip()
+        elif isinstance(result, str):
+            ref_text = result.strip()
+        else:
+            ref_text = str(result).strip()
+
+        if not ref_text:
+            raise RuntimeError(
+                f"Unable to extract reference text from {ref_audio_path} for profile '{self.profile}'."
+            )
+
+        return ref_text
 
     def tts(self, text: str) -> bytes:
         results = list(

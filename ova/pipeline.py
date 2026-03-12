@@ -23,24 +23,10 @@ DEFAULT_ASR_MODEL = "nvidia/parakeet-tdt-0.6b-v3"
 
 class OVAPipeline:
     def __init__(self, profile: str = "default"):
-        required_files = ["prompt.txt", "ref_audio.wav", "ref_text.txt"]
-        profile_dir = Path(f"profiles/{profile}/")
-
-        if profile_dir.is_dir() and all(
-            (profile_dir / f).is_file() for f in required_files
-        ):
-            self.profile = profile
-            self.tts = self._tts_with_voice_clone
-        else:
-            self.profile = "default"
-            self.tts = self._tts
-            if profile != "default":
-                logger.warning(
-                    (
-                        f"Unknown OVA profile '{profile}' or missing the following files in 'profiles/{profile}/' directory: "
-                        f"{', '.join(required_files)}. Using 'default' profile."
-                    )
-                )
+        repo_root = Path(__file__).resolve().parent.parent
+        profile_dir, ref_audio_path = self._resolve_profile(profile, repo_root)
+        self.tts = self._tts_with_voice_clone if ref_audio_path is not None else self._tts
+        self.ref_audio_path = ref_audio_path
 
         self.device = get_device()
 
@@ -49,8 +35,15 @@ class OVAPipeline:
 
         self.context = [{"role": "system", "content": self.system_prompt}]
 
+        # initialize ASR
+        self.asr_model = nemo_asr.models.ASRModel.from_pretrained(
+            model_name=DEFAULT_ASR_MODEL
+        )
+        self._configure_asr_decoding()
+
         # initialize TTS
         if self.tts.__name__ == "_tts_with_voice_clone":  # voice cloning
+            ref_text = self._transcribe_reference_audio(self.ref_audio_path)
             self.tts_model = Qwen3TTSModel.from_pretrained(
                 VOICE_CLONE_TTS_MODEL,
                 device_map=self.device,
@@ -58,11 +51,8 @@ class OVAPipeline:
                 # attn_implementation="flash_attention_2",
             )
 
-            with open(profile_dir / "ref_text.txt", "r", encoding="utf-8") as f:
-                ref_text = f.read().strip()
-
             self.voice_clone_prompt_items = self.tts_model.create_voice_clone_prompt(
-                ref_audio=str(profile_dir / "ref_audio.wav"),
+                ref_audio=str(self.ref_audio_path),
                 ref_text=ref_text,
                 x_vector_only_mode=False,
             )
@@ -74,14 +64,67 @@ class OVAPipeline:
             # warm up
             self.tts_model("Just testing!", voice=DEFAULT_TTS_VOICE)
 
-        # initialize ASR
-        self.asr_model = nemo_asr.models.ASRModel.from_pretrained(
-            model_name=DEFAULT_ASR_MODEL
-        )
-        self._configure_asr_decoding()
-
         # initialize chat model
         self.chat_model = DEFAULT_CHAT_MODEL
+
+    def _find_reference_audio(self, profile_dir: Path) -> Path | None:
+        audio_dir = profile_dir / "audio"
+        if not audio_dir.is_dir():
+            return None
+
+        audio_files = sorted(
+            path for path in audio_dir.iterdir() if path.is_file() and path.suffix.lower() == ".wav"
+        )
+        if not audio_files:
+            return None
+
+        return audio_files[0]
+
+    def _resolve_profile(self, profile: str, repo_root: Path) -> tuple[Path, Path | None]:
+        requested_profile_dir = repo_root / "profiles" / profile
+        prompt_path = requested_profile_dir / "prompt.txt"
+        ref_audio_path = self._find_reference_audio(requested_profile_dir)
+
+        if prompt_path.is_file() and (profile == "default" or ref_audio_path is not None):
+            self.profile = profile
+            return requested_profile_dir, ref_audio_path
+
+        default_profile_dir = repo_root / "profiles" / "default"
+        default_prompt_path = default_profile_dir / "prompt.txt"
+        if profile != "default" and default_prompt_path.is_file():
+            logger.warning(
+                (
+                    "Unknown OVA profile '%s' or missing required files in '%s'. "
+                    "Expected prompt.txt and at least one .wav file under audio/. Using 'default' profile."
+                ),
+                profile,
+                requested_profile_dir,
+            )
+            self.profile = "default"
+            return default_profile_dir, self._find_reference_audio(default_profile_dir)
+
+        raise RuntimeError(
+            f"Unable to load OVA profile '{profile}' from {requested_profile_dir}"
+        )
+
+    def _transcribe_reference_audio(self, ref_audio_path: Path | None) -> str:
+        if ref_audio_path is None:
+            raise RuntimeError(
+                f"Voice clone profile '{self.profile}' is missing a reference audio file."
+            )
+
+        logger.info(
+            "Transcribing reference audio for profile '%s' from %s",
+            self.profile,
+            ref_audio_path.name,
+        )
+        ref_text = self.transcribe(ref_audio_path.read_bytes())
+        if not ref_text:
+            raise RuntimeError(
+                f"Unable to extract reference text from {ref_audio_path} for profile '{self.profile}'."
+            )
+
+        return ref_text
 
     def _disable_asr_cuda_graphs(self) -> bool:
         decoding = getattr(getattr(self.asr_model, "decoding", None), "decoding", None)

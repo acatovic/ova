@@ -100,8 +100,11 @@ Stop all services:
 In order to add a new voice, no code changes are required. You simply need to do the following:
 
 1. Create a new directory `profiles/<voice>/`
-2. Add a 3-5 second voice clip `ref_audio.wav`, a direct transcription of that clip `ref_text.txt`, and any instructions in the `prompt.txt` - all under the sub-directory created in the previous step.
-3. To start the service with the new voice, simply run `OVA_PROFILE=<voice> ./ova.sh start`
+2. Add your instructions to `profiles/<voice>/prompt.txt`
+3. Add a 3-5 second reference voice clip anywhere under `profiles/<voice>/audio/` as a `.wav` file
+4. To start the service with the new voice, simply run `OVA_PROFILE=<voice> ./ova.sh start`
+
+At startup, OVA will automatically pick the first `.wav` file in `profiles/<voice>/audio/` (sorted alphabetically), run it through Parakeet ASR to extract the reference text, and then build the Qwen3 TTS voice-clone prompt from that audio+text pair. No `ref_text.txt` is needed anymore.
 
 And that's it!
 
